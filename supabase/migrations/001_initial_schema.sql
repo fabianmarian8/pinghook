@@ -1,9 +1,6 @@
 -- PingHook Database Schema
 -- Run this in your Supabase SQL Editor
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- Profiles table (extends auth.users)
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -17,7 +14,7 @@ CREATE TABLE public.profiles (
 
 -- Webhooks table
 CREATE TABLE public.webhooks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   endpoint_id TEXT UNIQUE NOT NULL,
@@ -26,7 +23,7 @@ CREATE TABLE public.webhooks (
 
 -- Webhook logs table
 CREATE TABLE public.webhook_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   webhook_id UUID NOT NULL REFERENCES public.webhooks(id) ON DELETE CASCADE,
   method TEXT NOT NULL,
   headers JSONB DEFAULT '{}',
@@ -38,7 +35,7 @@ CREATE TABLE public.webhook_logs (
 
 -- Cron monitors table
 CREATE TABLE public.cron_monitors (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   ping_url TEXT UNIQUE NOT NULL,
@@ -52,7 +49,7 @@ CREATE TABLE public.cron_monitors (
 
 -- Cron pings table
 CREATE TABLE public.cron_pings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   monitor_id UUID NOT NULL REFERENCES public.cron_monitors(id) ON DELETE CASCADE,
   received_at TIMESTAMPTZ DEFAULT NOW()
 );

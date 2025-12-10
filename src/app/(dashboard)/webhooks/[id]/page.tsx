@@ -8,6 +8,7 @@ import { Webhook, Copy, ArrowLeft, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow, format } from 'date-fns'
 import { WebhookLogs } from '@/components/webhook/WebhookLogs'
+import { WebhookAlerts } from '@/components/webhook/WebhookAlerts'
 import { DeleteWebhookButton } from '@/components/webhook/DeleteWebhookButton'
 import { CopyButton } from '@/components/webhook/CopyButton'
 
@@ -20,6 +21,15 @@ export default async function WebhookDetailPage({
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
+
+  // Get user profile for plan info
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user!.id)
+    .single()
+
+  const userPlan = profile?.plan || 'free'
 
   // Get webhook
   const { data: webhook, error } = await supabase
@@ -124,6 +134,9 @@ export default async function WebhookDetailPage({
         </Card>
       </div>
 
+      {/* Alert Settings */}
+      <WebhookAlerts webhookId={webhook.id} userPlan={userPlan} />
+
       {/* Logs */}
       <Card>
         <CardHeader>
@@ -133,7 +146,7 @@ export default async function WebhookDetailPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <WebhookLogs webhookId={webhook.id} initialLogs={logs || []} />
+          <WebhookLogs webhookId={webhook.id} initialLogs={logs || []} userPlan={userPlan} />
         </CardContent>
       </Card>
     </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isResendConfigured, sendWebhookAlertEmail } from '@/lib/resend'
 
 // Handle all HTTP methods for webhook capture
 async function handleWebhook(
@@ -11,12 +12,13 @@ async function handleWebhook(
   try {
     const supabase = createAdminClient()
 
-    // Find the webhook by endpoint_id
+    // Find the webhook by endpoint_id with user info for alerts
+    // Note: alert_email and slack_webhook_url are added via migration
     const { data: webhook, error: webhookError } = await supabase
       .from('webhooks')
-      .select('id')
+      .select('*')
       .eq('endpoint_id', endpointId)
-      .single()
+      .single() as { data: { id: string; name: string; user_id: string; alert_email?: string; slack_webhook_url?: string } | null; error: any }
 
     if (webhookError || !webhook) {
       return NextResponse.json(
@@ -71,7 +73,7 @@ async function handleWebhook(
                      'unknown'
 
     // Log the webhook
-    const { error: logError } = await supabase
+    const { data: logEntry, error: logError } = await supabase
       .from('webhook_logs')
       .insert({
         webhook_id: webhook.id,
@@ -81,9 +83,74 @@ async function handleWebhook(
         query_params: Object.keys(queryParams).length > 0 ? queryParams : null,
         source_ip: sourceIp,
       })
+      .select('id')
+      .single()
 
     if (logError) {
       console.error('Error logging webhook:', logError)
+    }
+
+    // Check user plan for notifications
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', webhook.user_id)
+      .single()
+
+    const plan = profile?.plan || 'free'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+    // Send email alert if configured (Pro+ feature)
+    const alertEmail = webhook.alert_email
+    if (alertEmail && isResendConfigured() && logEntry && (plan === 'pro' || plan === 'team')) {
+      try {
+        await sendWebhookAlertEmail({
+          to: alertEmail,
+          webhookName: webhook.name,
+          method,
+          sourceIp,
+          receivedAt: new Date(),
+          endpointUrl: `${appUrl}/api/hook/${endpointId}`,
+          viewUrl: `${appUrl}/webhooks/${webhook.id}`,
+        })
+      } catch (emailError) {
+        console.error('Failed to send webhook alert email:', emailError)
+      }
+    }
+
+    // Send Slack notification if configured (Team feature)
+    const slackWebhookUrl = webhook.slack_webhook_url
+    if (slackWebhookUrl && plan === 'team') {
+      try {
+        await fetch(slackWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `New ${method} request to *${webhook.name}*`,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `*New Webhook Request*\n\n*Webhook:* ${webhook.name}\n*Method:* \`${method}\`\n*Source IP:* ${sourceIp}\n*Time:* ${new Date().toISOString()}`,
+                },
+              },
+              {
+                type: 'actions',
+                elements: [
+                  {
+                    type: 'button',
+                    text: { type: 'plain_text', text: 'View Details' },
+                    url: `${appUrl}/webhooks/${webhook.id}`,
+                  },
+                ],
+              },
+            ],
+          }),
+        })
+      } catch (slackError) {
+        console.error('Failed to send Slack notification:', slackError)
+      }
     }
 
     // Return success response
